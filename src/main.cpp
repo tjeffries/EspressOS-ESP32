@@ -22,7 +22,7 @@ lever-converted espresso machine
 #define GROUP_RELAY_PIN 14
 // Pump/solenoid pins:
 #define PUMP_SPEED 23
-// Thermocouple breakout board pins:
+// Thermocouple breakout board pins: 
 #define GROUP_THERMO_SO 26
 #define GROUP_THERMO_CS 25
 #define GROUP_THERMO_CLK 33

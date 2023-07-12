@@ -1,0 +1,14 @@
+{
+  "cpu": {
+    "fqbn": "arduino:avr:nano:cpu=atmega328old",
+    "name": "Arduino Nano",
+    "type": "serial"
+  },
+  "secrets": [],
+  "included_libs": [
+    {
+      "name": "EncoderButton",
+      "version": "1.0.6"
+    }
+  ]
+}
