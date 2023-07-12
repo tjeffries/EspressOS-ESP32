@@ -11,8 +11,9 @@
 #define SCREEN_ADDRESS 0x3C  ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
 int state;
-double pressure;
-int counts[MENU_COUNT] = {};
+double pressure, targetPressure, P, I, D;
+double vals[MENU_COUNT] = {};
+String valNames[MENU_COUNT] = {"Pressure", "P", "I", "D","5"};
 Adafruit_SSD1306 screen;
 
 Display::Display() {
@@ -34,8 +35,23 @@ void Display::init(){
 }
 
 void Display::increment(int count) {
-    counts[state] += count;
+    vals[state] += count;
     drawMenu();
+
+    switch (state)
+    {
+    case 0:
+        targetPressure = vals[state];
+    case 1:
+        P = vals[state];
+        break;
+    case 2:
+        I = vals[state];
+        break;
+    case 3:
+        D = vals[state];
+        break;
+    }
 }
 
 void Display::button(int count) {
@@ -48,11 +64,11 @@ void Display::drawMenu() {
     screen.clearDisplay();
     screen.setCursor(0, 16);   // Start position
 
-    screen.print("menu state: ");
-    screen.println(state+1);
+    screen.print("Parameter: ");
+    screen.println(valNames[state]);
     
-    screen.print("menu count: ");
-    screen.println(counts[state]);
+    screen.print("Setting: ");
+    screen.println(vals[state]);
 
     screen.print("pressure: ");
     screen.println(pressure);

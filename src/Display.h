@@ -7,8 +7,8 @@ class Display {
   
   public:
     int state;
-    double pressure;
-    int counts[MENU_COUNT];
+    double pressure, targetPressure, P, I, D;
+    int vals[MENU_COUNT];
     Adafruit_SSD1306 screen;
   
     Display();

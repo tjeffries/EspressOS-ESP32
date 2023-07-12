@@ -5,24 +5,28 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Display.h>
+#include "ADS1X15.h"
 
 /*
 More complex espresso machine controller, orignally for Andreja (Super) Premium 
 lever-converted espresso machine
 */
 
+// Control constants:
+#define PRESSURE_AVG_COUNT 1
+#define PUMP_AVG_COUNT 50
+
 // Input pins:
 #define ROTARY_1 32
 #define ROTARY_2 35
 #define BUTTON_1 34
 #define PRESSURE_INPUT_PIN 33
-#define PRESSURE_AVG_COUNT 100
 // PID pins:
 #define BOILER_RELAY_PIN 12
 #define GROUP_RELAY_PIN 14
 // Pump/solenoid pins:
 #define PUMP_SPEED 23
-// Thermocouple breakout board pins: 
+// Thermocouple breakout board pins:
 #define GROUP_THERMO_SO 26
 #define GROUP_THERMO_CS 25
 #define GROUP_THERMO_CLK 33
@@ -31,16 +35,19 @@ lever-converted espresso machine
 #define BOILER_THERMO_CLK 19
 
 double boilerSetpoint, groupSetpoint, boilerInput, groupInput, boilerOutput, groupOutput;
-double pumpSetpoint, pumpInput, pumpOutput,pressureTotal;
-int pressureIndex;
+double pumpSetpoint, pumpInput, pumpOutput, pressureTotal, pumpTotal;
+int pressureIndex, pumpIndex;
 double pressures[PRESSURE_AVG_COUNT] = {};
+double pumpVals[PUMP_AVG_COUNT] = {};
 
 PID boilerPID(&boilerInput, &boilerOutput, &boilerSetpoint, 100, 50, 10, DIRECT);
 PID groupPID(&groupInput, &groupOutput, &groupSetpoint, 100, 50, 10, DIRECT);
-PID pumpPID(&pumpInput, &pumpOutput, &pumpSetpoint, 100, 0, 0, DIRECT);
+PID pumpPID(&pumpInput, &pumpOutput, &pumpSetpoint, 20, 25, 7, DIRECT);
 
 MAX6675 groupThermo(GROUP_THERMO_CLK, GROUP_THERMO_CS, GROUP_THERMO_SO);
 MAX6675 boilerThermo(BOILER_THERMO_CLK, BOILER_THERMO_CS, BOILER_THERMO_SO);
+
+ADS1115 ADS(0x48);
 
 EncoderButton *encoder;
 Display display;
@@ -57,7 +64,7 @@ double readPressure();
 void setOutput(double output, int relayPin);
 void onEncoder(EncoderButton eb);
 void onButton(EncoderButton eb);
-void controlPump(double currentPressure, double targetPressure);
+void controlPump(double currentPressure, double targetPressure, bool set);
 
 void setup() {
   //Setup and serial init:
@@ -84,6 +91,7 @@ void setup() {
   boilerPID.SetMode(AUTOMATIC);
   groupPID.SetMode(AUTOMATIC);
   pumpPID.SetMode(AUTOMATIC);
+  pumpPID.SetSampleTime(10);
 
   // setup encoder
   encoder = new EncoderButton(ROTARY_1, ROTARY_2, BUTTON_1);
@@ -92,6 +100,17 @@ void setup() {
 
   // setup display
   display.init();
+  display.P = pumpPID.GetKp();
+  display.I = pumpPID.GetKi();
+  display.D = pumpPID.GetKd();
+  display.vals[1] = display.P;
+  display.vals[2] = display.I;
+  display.vals[3] = display.D;
+
+  // setup ADC
+  ADS.begin();
+  ADS.setGain(1);      // 4.096 volt
+  ADS.setDataRate(7);
 }
 
 void loop() {
@@ -100,13 +119,15 @@ void loop() {
   encoder->update();
   display.drawMenu();
   display.pressure = readPressure();
+  controlPump(max(display.pressure, 0.0), display.targetPressure, false);
 
-
+  // Heatbeat functions (don't need to call every loop)
   unsigned long now = millis();
-  if (now - lastHeartbeat > 250) {
-    controlPump(display.pressure, (double)encoder->position());
-    Serial.println((String)pumpOutput + " " + (String)readPressure() + " " + (String)pressureIndex + " " + (String)pressureTotal);
+  if (now - lastHeartbeat > 100) {
     lastHeartbeat = now;
+
+    controlPump(max(display.pressure, 0.0), display.targetPressure, true);
+    pumpPID.SetTunings(display.P, display.I, display.D);
   }
 }
 
@@ -122,9 +143,6 @@ void controlGroup() {
 }
 
 void setOutput(double output, int relayPin) {
-  /************************************************
-     turn the given SSR pin on/off based on pid output
-   ************************************************/
   unsigned long now = millis();
   if (now - windowStartTime > WINDOW_SIZE) {  //time to shift the Relay Window
     windowStartTime += WINDOW_SIZE;
@@ -135,25 +153,22 @@ void setOutput(double output, int relayPin) {
 
 // Encoder button callback
 void onButton(EncoderButton eb) {
-  Serial.print("button clickCount: ");
-  Serial.println(eb.clickCount());
-
   display.button(eb.clickCount());
 }
 
 // Encoder rotation callback
 void onEncoder(EncoderButton eb) {
-  Serial.print("encoder position is: ");
-  Serial.println(eb.position());
-
   display.increment(eb.increment());
 }
 
 double readPressure() {
   // analog in 0-255. Pressure transducer outputs 0.5-4.5V, for 0-300 psi (0-20.68 BarG)
-  double raw = (double)analogRead(PRESSURE_INPUT_PIN);
+  double raw = ADS.toVoltage(ADS.getValue());
+  ADS.requestADC(0);
+  Serial.println((String)raw);
+  //double raw = (double)analogRead(PRESSURE_INPUT_PIN);
   // convert from ADC input to PSI, accounting for ADC nonlinearity
-  double psi = (raw - 270.0) * 300.0 / 4095.0;
+  double psi = (raw - 0.337) * 200.0 / 4.0;
 
   // track moving average to reduce noise
   pressureTotal -= pressures[pressureIndex];
@@ -161,15 +176,26 @@ double readPressure() {
   pressureTotal += pressures[pressureIndex];
   pressureIndex++;
   pressureIndex %= PRESSURE_AVG_COUNT;
+
+  //Serial.println((String)pumpOutput + " " + (String)psi + " " + (String)(pressureTotal/((double)PRESSURE_AVG_COUNT)) + " " + (String)pressureIndex + " " + (String)pressureTotal);
   
   return pressureTotal/((double)PRESSURE_AVG_COUNT);
 }
 
-void controlPump(double currentPressure, double targetPressure) {
+void controlPump(double currentPressure, double targetPressure, bool set) {
   pumpInput = currentPressure;
   pumpSetpoint = targetPressure;
   pumpPID.Compute();
+
+  // track moving pump average to smooth output
+  pumpTotal -= pumpVals[pumpIndex];
+  pumpVals[pumpIndex] = pumpOutput;
+  pumpTotal += pumpVals[pumpIndex];
+  pumpIndex++;
+  pumpIndex %= PUMP_AVG_COUNT;
+  
+  //Serial.println((String)pumpOutput + " " + (String)(pumpTotal/((double)PRESSURE_AVG_COUNT)) + " " + (String)pumpIndex + " " + (String)pumpTotal);
   
   //int output = min(max((targetPressure-currentPressure), 0.0)*10, 255.0);
-  analogWrite(PUMP_SPEED, pumpOutput);
+  if(set) analogWrite(PUMP_SPEED, pumpTotal/((double)PUMP_AVG_COUNT));
 } 
