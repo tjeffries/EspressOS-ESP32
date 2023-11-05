@@ -2,7 +2,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#define MENU_COUNT 5
+#define MENU_COUNT 4
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 // The pins for I2C are defined by the Wire-library.
 // On an arduino UNO:       A4(SDA), A5(SCL)
@@ -13,7 +13,7 @@
 int state;
 double pressure, targetPressure, P, I, D;
 double vals[MENU_COUNT] = {};
-String valNames[MENU_COUNT] = {"Pressure", "P", "I", "D","5"};
+String valNames[MENU_COUNT] = {"Pressure", "P", "I", "D"};
 Adafruit_SSD1306 screen;
 
 Display::Display() {
@@ -35,23 +35,23 @@ void Display::init(){
 }
 
 void Display::increment(int count) {
-    vals[state] += count;
-    drawMenu();
-
+    //vals[state] += count;
     switch (state)
     {
     case 0:
-        targetPressure = vals[state];
+        targetPressure += count;
+        break;
     case 1:
-        P = vals[state];
+        P += count;
         break;
     case 2:
-        I = vals[state];
+        I += count;
         break;
     case 3:
-        D = vals[state];
+        D += count;
         break;
     }
+    drawMenu();
 }
 
 void Display::button(int count) {
@@ -68,7 +68,22 @@ void Display::drawMenu() {
     screen.println(valNames[state]);
     
     screen.print("Setting: ");
-    screen.println(vals[state]);
+    //screen.println(vals[state]);
+    switch (state)
+    {
+    case 0:
+        screen.println(targetPressure);
+        break;
+    case 1:
+        screen.println(P);
+        break;
+    case 2:
+        screen.println(I);
+        break;
+    case 3:
+        screen.println(D);
+        break;
+    }
 
     screen.print("pressure: ");
     screen.println(pressure);

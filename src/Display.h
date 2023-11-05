@@ -1,7 +1,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#define MENU_COUNT 5
+#define MENU_COUNT 4
 
 class Display {
   

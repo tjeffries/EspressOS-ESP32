@@ -6,6 +6,14 @@
 #include <Adafruit_SSD1306.h>
 #include <Display.h>
 #include "ADS1X15.h"
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+const char* ssid = "bash~ sudo rm -rf /";
+const char* password = "largeroad006";
+
+//Your Domain name with URL path or IP address with path
+String serverName = "http://35.225.145.147/set";
 
 /*
 More complex espresso machine controller, orignally for Andreja (Super) Premium 
@@ -56,7 +64,8 @@ Display display;
 /* since time to calculate the multiple PID outputs is negligible compared to total window length, 
 should be okay to share a single window period. */
 unsigned long windowStartTime;
-unsigned long lastHeartbeat;
+unsigned long last100Heartbeat;
+unsigned long last1kHeartbeat;
 
 void controlBoiler();
 void controlGroup();
@@ -65,10 +74,19 @@ void setOutput(double output, int relayPin);
 void onEncoder(EncoderButton eb);
 void onButton(EncoderButton eb);
 void controlPump(double currentPressure, double targetPressure, bool set);
+void getServerSettings();
 
 void setup() {
   //Setup and serial init:
   Serial.begin(115200);
+
+  // Wifi init
+  WiFi.begin(ssid, password);
+  Serial.println("Connecting");
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
 
   // set default values
   boilerSetpoint = 34;
@@ -121,14 +139,72 @@ void loop() {
   display.pressure = readPressure();
   controlPump(max(display.pressure, 0.0), display.targetPressure, false);
 
-  // Heatbeat functions (don't need to call every loop)
+  // 1s heartbeat/server check functions
   unsigned long now = millis();
-  if (now - lastHeartbeat > 100) {
-    lastHeartbeat = now;
+  if (now - last1kHeartbeat > 2500) {
+    last1kHeartbeat = now;
+
+    getServerSettings();
+  }
+
+  // 100ms heatbeat functions
+  if (now - last100Heartbeat > 100) {
+    last100Heartbeat = now;
 
     controlPump(max(display.pressure, 0.0), display.targetPressure, true);
     pumpPID.SetTunings(display.P, display.I, display.D);
   }
+}
+
+void getServerSettings() {
+  if(WiFi.status()== WL_CONNECTED){
+      HTTPClient http;
+
+      String serverPath = serverName + "?device_id=123&pressure="+display.targetPressure;
+      
+      // Your Domain name with URL path or IP address with path
+      http.begin(serverPath.c_str());
+      
+      // Send HTTP GET request
+      int httpResponseCode = http.GET();
+      
+      if (httpResponseCode==200) {
+        String payload = http.getString();
+        Serial.println(payload);
+        
+        String delim=" | ";
+        int index = payload.indexOf(delim)+delim.length();
+        String str = payload.substring(index, payload.indexOf(delim, index));
+        double P = str.toDouble();
+        
+        index = payload.indexOf(delim, index)+delim.length();
+        str = payload.substring(index, payload.indexOf(delim, index));
+        double I = str.toDouble();
+        
+        index = payload.indexOf(delim, index)+delim.length();
+        str = payload.substring(index, payload.indexOf(delim, index));
+        double D = str.toDouble();
+
+        // index = payload.indexOf(delim, index)+delim.length();
+        // index = payload.indexOf(delim, index)+delim.length();
+        // str = payload.substring(index, payload.indexOf(delim, index));
+        // double targetPressure = str.toDouble();
+        
+        display.P = P;
+        display.I = I;
+        display.D = D;
+        //display.targetPressure = targetPressure;
+
+        Serial.println((String)P+" "+I+" "+D);
+       
+      }
+      else {
+        Serial.print("Error code: ");
+        Serial.println(httpResponseCode);
+      }
+      // Free resources
+      http.end();
+    }
 }
 
 void controlBoiler() {
@@ -165,7 +241,7 @@ double readPressure() {
   // analog in 0-255. Pressure transducer outputs 0.5-4.5V, for 0-300 psi (0-20.68 BarG)
   double raw = ADS.toVoltage(ADS.getValue());
   ADS.requestADC(0);
-  Serial.println((String)raw);
+  //Serial.println((String)raw);
   //double raw = (double)analogRead(PRESSURE_INPUT_PIN);
   // convert from ADC input to PSI, accounting for ADC nonlinearity
   double psi = (raw - 0.337) * 200.0 / 4.0;
