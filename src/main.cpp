@@ -9,12 +9,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-const char* ssid = "bash~ sudo rm -rf /";
-const char* password = "largeroad006";
-
-//Your Domain name with URL path or IP address with path
-String serverName = "http://35.225.145.147/set";
-
 /*
 More complex espresso machine controller, orignally for Andreja (Super) Premium 
 lever-converted espresso machine
@@ -22,7 +16,7 @@ lever-converted espresso machine
 
 // Control constants:
 #define PRESSURE_AVG_COUNT 1
-#define PUMP_AVG_COUNT 50
+#define PUMP_AVG_COUNT 80
 
 // Input pins:
 #define ROTARY_1 32
@@ -42,6 +36,13 @@ lever-converted espresso machine
 #define BOILER_THERMO_CS 18
 #define BOILER_THERMO_CLK 19
 
+const char* ssid = "";
+const char* password = "";
+
+//Your Domain name with URL path or IP address with path
+String serverName = "http://35.225.145.147/set";
+String deviceId = "GURU@TEST1";
+
 double boilerSetpoint, groupSetpoint, boilerInput, groupInput, boilerOutput, groupOutput;
 double pumpSetpoint, pumpInput, pumpOutput, pressureTotal, pumpTotal;
 int pressureIndex, pumpIndex;
@@ -50,7 +51,7 @@ double pumpVals[PUMP_AVG_COUNT] = {};
 
 PID boilerPID(&boilerInput, &boilerOutput, &boilerSetpoint, 100, 50, 10, DIRECT);
 PID groupPID(&groupInput, &groupOutput, &groupSetpoint, 100, 50, 10, DIRECT);
-PID pumpPID(&pumpInput, &pumpOutput, &pumpSetpoint, 20, 25, 7, DIRECT);
+PID pumpPID(&pumpInput, &pumpOutput, &pumpSetpoint, 30, 5, 2, DIRECT);
 
 MAX6675 groupThermo(GROUP_THERMO_CLK, GROUP_THERMO_CS, GROUP_THERMO_SO);
 MAX6675 boilerThermo(BOILER_THERMO_CLK, BOILER_THERMO_CS, BOILER_THERMO_SO);
@@ -160,7 +161,7 @@ void getServerSettings() {
   if(WiFi.status()== WL_CONNECTED){
       HTTPClient http;
 
-      String serverPath = serverName + "?device_id=123&pressure="+display.targetPressure;
+      String serverPath = serverName + "?device_id="+deviceId+"&pressure="+display.targetPressure;
       
       // Your Domain name with URL path or IP address with path
       http.begin(serverPath.c_str());
@@ -174,6 +175,7 @@ void getServerSettings() {
         
         String delim=" | ";
         int index = payload.indexOf(delim)+delim.length();
+        index = payload.indexOf(delim, index)+delim.length();
         String str = payload.substring(index, payload.indexOf(delim, index));
         double P = str.toDouble();
         
@@ -243,7 +245,7 @@ double readPressure() {
   ADS.requestADC(0);
   //Serial.println((String)raw);
   //double raw = (double)analogRead(PRESSURE_INPUT_PIN);
-  // convert from ADC input to PSI, accounting for ADC nonlinearity
+  // convert from ADC input to PSI
   double psi = (raw - 0.337) * 200.0 / 4.0;
 
   // track moving average to reduce noise
@@ -259,6 +261,7 @@ double readPressure() {
 }
 
 void controlPump(double currentPressure, double targetPressure, bool set) {
+  double pumpCommand;
   pumpInput = currentPressure;
   pumpSetpoint = targetPressure;
   pumpPID.Compute();
@@ -272,6 +275,12 @@ void controlPump(double currentPressure, double targetPressure, bool set) {
   
   //Serial.println((String)pumpOutput + " " + (String)(pumpTotal/((double)PRESSURE_AVG_COUNT)) + " " + (String)pumpIndex + " " + (String)pumpTotal);
   
+  if(targetPressure <= 0){
+    pumpCommand = 0;
+  } else {
+    pumpCommand = pumpTotal/((double)PUMP_AVG_COUNT);
+  }
+
   //int output = min(max((targetPressure-currentPressure), 0.0)*10, 255.0);
-  if(set) analogWrite(PUMP_SPEED, pumpTotal/((double)PUMP_AVG_COUNT));
+  if(set) analogWrite(PUMP_SPEED, pumpCommand);
 } 
