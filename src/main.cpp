@@ -36,8 +36,8 @@ lever-converted espresso machine
 #define BOILER_THERMO_CS 18
 #define BOILER_THERMO_CLK 19
 
-const char* ssid = "";
-const char* password = "";
+const char* ssid = "bash~ sudo rm -rf /";
+const char* password = "Nice Try Haha";
 
 //Your Domain name with URL path or IP address with path
 String serverName = "http://35.225.145.147/set";
